@@ -1,4 +1,4 @@
--- next class: organize sql queries, re-run juypter notebook, merge two tables to compare number of illness and number of deaths by state
+-- create tables to insert data from jupyter notebook
 drop table outbreak;
 CREATE TABLE outbreak (
 year int,
@@ -8,13 +8,6 @@ etiology TEXT,
 setting TEXT,
 illness Int
 );
-
-
-select count(*) from(
-select 'Ill' as Rermark, stateid,etiology,illness, 0 pop from outbreak
-union
-select 'Death' as Rermark, * from death 
-) a;
 
 drop table death;
 CREATE TABLE death (
@@ -26,44 +19,62 @@ population INT
 select distinct stateid,population into population 
 from death;
 
+-- where etiology is blank set as unknown
 begin transaction;
 update outbreak
 set etiology = 'Unknown'
 where etiology is null;
 commit;
 
+-- check to see if above worked
+select distinct etiology from outbreak order by etiology desc
+
+-- delete states that do not appear in both datasets
+begin transaction;
+delete from outbreak where stateid in ('Republic of Palau','Puerto Rico', 'Vermont', 'New Mexico', 'Hawaii', 'South Dakota', 'Iowa', 'Multistate', 'Montana', 'Wyoming', 'North Dakota', 'Nebraska', 'Maine', 'Idaho', 'Alaska')
+commit;
+
+-- update DC in outbreak to reflect WashDC in in both datasets
+update outbreak
+set stateid ='District of Columbia'
+where stateid ='Washington DC'
+
+-- check to see if above worked (states should match in both sets)
+select distinct stateid from outbreak order by stateid desc
+select distinct stateid from death order by stateid desc
+
+
+-- adding population per state in the outbreak database
 select pop.stateid,ob.etiology ,ob.illness , pop.population into Illness from outbreak ob 
 left join 
 population pop
 on ob.stateid = pop.stateid;
 
+-- use a union to join both datasets and mark each original dataset to be able to distinguish orignial data
+select count(*) from(
+select 'Ill' as Rermark, stateid,etiology,illness,population from illness
+union
+select 'Death' as Rermark, stateid,cause, deaths,population from death 
+) a;
 
-select stateid,etiology,sum(illness) illnessCount from Illness
-group by stateid,etiology
-order by 3 desc;
+-- new table with all data together (final product)
+Select * into death_illness_cause_population from 
+(select 'Ill' as Rermark, stateid,etiology as cause,illness as count,population from illness
+union
+select 'Death' as Rermark, stateid,cause, deaths,population from death 
+) a;
 
+-- show type of data grouped by remark
+select Rermark,count(*) from death_illness_cause_population
+group by Rermark
 
-select * from outbreak;
+-- order by state 
+select Rermark,stateid,count(*) from death_illness_cause_population
+group by Rermark, stateid
+order by 2,1,3 desc ;
 
---second query box !!!!
+-- show count of illness or death by state
+select stateid,count(*) from death_illness_cause_population
+group by stateid
+order by count desc ;
 
-select distinct stateid from death where stateid  not in (
-select distinct stateid from outbreak);
-
---this is how to see which states are not on the death dataset 
-select distinct stateid from outbreak  where stateid  not in (
-select distinct stateid from death);
-
---how to update DC
-update outbreak
-set stateid ='District of Columbia'
-where stateid ='Washington DC'
-
-select * from outbreak where stateid in (select distinct stateid from outbreak  where stateid  not in (
-select distinct stateid from death))
-
---this is how to delete states we don't need
-begin transaction;
-delete from outbreak where stateid in ('Republic of Palau','Puerto Rico', 'Vermont', 'New Mexico', 'Hawaii', 'South Dakota', 'Iowa', 'Multistate', 'Montana', 'Wyoming', 'North Dakota', 'Nebraska', 'Maine', 'Idaho', 'Alaska')
-
-rollback
